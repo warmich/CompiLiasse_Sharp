@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "CompiLiasse_Sharp (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "CompiLiasse_Sharp (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

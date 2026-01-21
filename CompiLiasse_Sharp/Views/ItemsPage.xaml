@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="CompiLiasse_Sharp.Views.ItemsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:CompiLiasse_Sharp.ViewModels">
+
+    <Page.DataContext>
+        <vm:ItemsViewModel />
+    </Page.DataContext>
+
+    <Grid Padding="24" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="12">
+        <TextBlock Text="Items" FontSize="28" FontWeight="SemiBold"/>
+
+        <!-- Recherche -->
+        <TextBox Grid.Row="1"
+             Width="320"
+             PlaceholderText="Rechercher..."
+             Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+        <!-- Ajout + refresh -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+            <TextBox Width="280"
+                 PlaceholderText="Nom de l’item..."
+                 Text="{Binding NewItemName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button Content="Ajouter" Click="Add_Click"/>
+            <Button Content="Rafraîchir" Click="Refresh_Click"/>
+        </StackPanel>
+
+        <!-- Liste -->
+        <ListView Grid.Row="3" MinHeight="200"
+              ItemsSource="{Binding Items}"
+              SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="80,*,180" Padding="8">
+                        <TextBlock Text="{Binding Id}" />
+
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="{Binding Name}" />
+                            <TextBlock Text="{Binding FolderDisplay}" Opacity="0.7" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Column="2" Text="{Binding CreatedAtLocalText}" HorizontalAlignment="Right"/>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Empty state (au-dessus de la liste, mais sans bloquer les interactions) -->
+        <StackPanel Grid.Row="3"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Opacity="0.8"
+                IsHitTestVisible="False"
+                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock Text="Aucun item" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+            <TextBlock Text="Ajoute un item ou rafraîchis la liste." HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8">
+            <Button Content="Choisir dossier…" Click="PickFolder_Click"/>
+            <Button Content="Ouvrir dossier" Click="OpenFolder_Click"/>
+            <Button Content="Supprimer sélection" Click="DeleteSelected_Click"/>
+        </StackPanel>
+    </Grid>
+</Page>
+

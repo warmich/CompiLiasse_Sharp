@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="CompiLiasse_Sharp.Views.ShellPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+    xmlns:vm="using:CompiLiasse_Sharp.ViewModels">
+
+    <Page.DataContext>
+        <vm:ShellViewModel />
+    </Page.DataContext>
+
+    <Grid>
+        <muxc:NavigationView x:Name="NavView"
+                             PaneDisplayMode="Left"
+                             IsSettingsVisible="True"
+                             SelectionChanged="NavView_SelectionChanged">
+
+            <muxc:NavigationView.MenuItems>
+                <muxc:NavigationViewItem Content="Accueil" Icon="Home" Tag="Home" />
+                <muxc:NavigationViewItem Content="Items" Icon="List" Tag="Items" />
+            </muxc:NavigationView.MenuItems>
+
+            <muxc:NavigationView.Header>
+                <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding HeaderTitle}"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+
+                    <CommandBar Grid.Column="1" DefaultLabelPosition="Collapsed">
+                        <AppBarButton Icon="Add"
+                                      Label="Nouveau"
+                                      Command="{Binding NewCommand}" />
+
+                        <AppBarButton Icon="Refresh"
+                                      Label="Rafraîchir"
+                                      Command="{Binding RefreshCommand}" />
+                    </CommandBar>
+                </Grid>
+            </muxc:NavigationView.Header>
+
+            <Frame x:Name="ContentFrame" />
+        </muxc:NavigationView>
+    </Grid>
+</Page>

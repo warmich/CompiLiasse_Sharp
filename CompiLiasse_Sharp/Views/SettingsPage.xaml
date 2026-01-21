@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="CompiLiasse_Sharp.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls">
+
+    <Grid Padding="24" RowDefinitions="Auto,*">
+        <TextBlock Text="Paramètres"
+                   FontSize="28"
+                   FontWeight="SemiBold" />
+
+        <StackPanel Grid.Row="1" Spacing="12" Margin="0,20,0,0" Width="320">
+            <TextBlock Text="Thème" FontWeight="SemiBold"/>
+
+            <muxc:ComboBox SelectedIndex="{Binding ThemeIndex, Mode=TwoWay}">
+                <muxc:ComboBoxItem Content="Système (par défaut)" />
+                <muxc:ComboBoxItem Content="Clair" />
+                <muxc:ComboBoxItem Content="Sombre" />
+            </muxc:ComboBox>
+
+            <TextBlock>
+                <Run Text="Version : " />
+                <Run Text="{Binding AppVersion}" />
+            </TextBlock>
+            <TextBlock Text="{Binding PackageName}" Opacity="0.8"/>
+        </StackPanel>
+    </Grid>
+</Page>

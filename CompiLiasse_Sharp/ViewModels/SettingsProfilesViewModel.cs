@@ -22,6 +22,8 @@ public sealed class SettingsProfilesViewModel : ObservableObject
 
     private bool _isLoading;
     private bool _suppressPersistSelection;
+    private bool _isApplyingSelection;     // évite de créer un draft quand on remplit les champs après sélection
+    private bool _isEnsuringDraft;         // évite re-entrance
 
     private SettingsProfile? _selectedProfile;
     public SettingsProfile? SelectedProfile
@@ -32,8 +34,19 @@ public sealed class SettingsProfilesViewModel : ObservableObject
             if (!SetProperty(ref _selectedProfile, value))
                 return;
 
-            ExcelPathText = _selectedProfile?.ExcelPath ?? "";
-            FolderPathText = _selectedProfile?.FolderPath ?? "";
+            _isApplyingSelection = true;
+            try
+            {
+                ExcelPathText = _selectedProfile?.ExcelPath ?? "";
+                FolderPathText = _selectedProfile?.FolderPath ?? "";
+
+                ExcelPathError = null;
+                FolderPathError = null;
+            }
+            finally
+            {
+                _isApplyingSelection = false;
+            }
 
             ExcelPathError = null;
             FolderPathError = null;
@@ -85,7 +98,9 @@ public sealed class SettingsProfilesViewModel : ObservableObject
             ExcelPathError = ValidateExcelPath(value);
 
             // Règle brouillon : au premier changement, basculer sur CONFIG_NON_SAUVEGARDEE
-            EnsureDraftIfEditing();
+            //EnsureDraftIfEditing();
+            if (!_isApplyingSelection)
+                _ = EnsureDraftIfEditingAsync();
         }
     }
 
@@ -99,7 +114,63 @@ public sealed class SettingsProfilesViewModel : ObservableObject
                 return;
 
             FolderPathError = ValidateFolderPath(value);
-            EnsureDraftIfEditing();
+
+            // Règle brouillon : au premier changement, basculer sur CONFIG_NON_SAUVEGARDEE
+            //EnsureDraftIfEditing();
+            if (!_isApplyingSelection)
+                _ = EnsureDraftIfEditingAsync();
+        }
+    }
+
+    private async Task EnsureDraftIfEditingAsync()
+    {
+        if (_isEnsuringDraft) return;
+        if (SelectedProfile is null) return;
+
+        // Si déjà sur draft -> rien à faire
+        if (SelectedProfile.IsDraft) return;
+
+        // Si on est en train de charger/sélectionner -> ne pas créer
+        if (_isApplyingSelection) return;
+
+        _isEnsuringDraft = true;
+        try
+        {
+            // Crée / met à jour le draft dans la DB avec les valeurs en cours
+            var draftId = await Db.UpsertDraftAsync(
+                string.IsNullOrWhiteSpace(ExcelPathText) ? null : ExcelPathText.Trim(),
+                string.IsNullOrWhiteSpace(FolderPathText) ? null : FolderPathText.Trim()
+            );
+
+            // Récupère l’objet draft depuis la liste ou recharge le draft
+            var draft = Profiles.FirstOrDefault(p => p.IsDraft);
+            if (draft is null)
+            {
+                var dbDraft = await Db.GetDraftAsync();
+                if (dbDraft is null) return;
+
+                // s’assure qu’il a l’Id réel
+                draft = dbDraft;
+                Profiles.Insert(1, draft); // juste après DEFAUT
+            }
+
+            draft.Id = draftId;
+            draft.Name = "CONFIG_NON_SAUVEGARDEE";
+            draft.ExcelPath = string.IsNullOrWhiteSpace(ExcelPathText) ? null : ExcelPathText.Trim();
+            draft.FolderPath = string.IsNullOrWhiteSpace(FolderPathText) ? null : FolderPathText.Trim();
+            draft.IsActive = true;
+            draft.IsDraft = true;
+
+            // Switch sur draft (et persiste LastProfileKey via ton mécanisme point 3)
+            SelectedProfile = draft;
+        }
+        catch
+        {
+            // simple : ignore pour l’instant
+        }
+        finally
+        {
+            _isEnsuringDraft = false;
         }
     }
 
@@ -251,80 +322,6 @@ public sealed class SettingsProfilesViewModel : ObservableObject
         }
     }
 
-    //public void LoadDummy()
-    //{
-    //    Profiles.Clear();
-
-    //    // Toujours en tête
-    //    Profiles.Add(DefaultProfile);
-
-    //    Profiles.Add(new SettingsProfile
-    //    {
-    //        Id = 1,
-    //        Name = "CONFIG1",
-    //        ExcelPath = @"C:\Dossiers\Compta\lias se.xlsx",
-    //        FolderPath = @"C:\Dossiers\Compta",
-    //        IsActive = true
-    //    });
-
-    //    Profiles.Add(new SettingsProfile
-    //    {
-    //        Id = 2,
-    //        Name = "CONFIG2",
-    //        ExcelPath = @"D:\Data\Fichier.xlsx",
-    //        FolderPath = @"D:\Data",
-    //        IsActive = true
-    //    });
-
-    //    SelectedProfile = DefaultProfile;
-    //}
-
-    private void EnsureDraftIfEditing()
-    {
-        if (SelectedProfile is null)
-            return;
-
-        // Si déjà draft => rien
-        if (SelectedProfile.IsDraft)
-            return;
-
-        // Si l'utilisateur modifie, on bascule en draft (sauf si on est déjà sur draft)
-        // Ici on déclenche à chaque set, mais on ne crée le draft qu'une fois.
-        // Condition : on a un SelectedProfile "normal" ou DEFAUT.
-        if (_draftProfile is null)
-        {
-            _draftProfile = new SettingsProfile
-            {
-                Id = -1, // dummy (en DB on aura un vrai Id)
-                Name = "CONFIG_NON_SAUVEGARDEE",
-                ExcelPath = SelectedProfile.ExcelPath,
-                FolderPath = SelectedProfile.FolderPath,
-                IsActive = true,
-                IsDraft = true
-            };
-        }
-
-        // Si on a changé les champs alors qu'on est sur un profil normal => switch vers draft
-        if (SelectedProfile.Id != _draftProfile.Id && !ReferenceEquals(SelectedProfile, _draftProfile))
-        {
-            // On garde les valeurs en cours (celles de l'UI)
-            _draftProfile.ExcelPath = ExcelPathText;
-            _draftProfile.FolderPath = FolderPathText;
-
-            // Ajouter au combo si pas présent
-            if (!Profiles.Any(p => p.IsDraft))
-                Profiles.Insert(1, _draftProfile); // juste après DEFAUT
-
-            SelectedProfile = _draftProfile;
-        }
-        else
-        {
-            // On est déjà sur draft, on met à jour l'objet draft
-            _draftProfile.ExcelPath = ExcelPathText;
-            _draftProfile.FolderPath = FolderPathText;
-        }
-    }
-
     public string? ValidateExcelPath(string? text)
     {
         var path = (text ?? "").Trim();
@@ -356,69 +353,129 @@ public sealed class SettingsProfilesViewModel : ObservableObject
     }
 
     // Appelé au LostFocus (étape 1 : on simule juste le “save” en mémoire)
-    public void OnExcelLostFocus()
+    public async Task OnExcelLostFocusAsync()
     {
         if (SelectedProfile is null) return;
         if (ExcelPathError != null) return;
 
-        SelectedProfile.ExcelPath = string.IsNullOrWhiteSpace(ExcelPathText) ? null : ExcelPathText.Trim();
+        var value = string.IsNullOrWhiteSpace(ExcelPathText) ? null : ExcelPathText.Trim();
+
+        // On écrit en DB uniquement si profil DB (draft ou normal)
+        if (SelectedProfile.Id > 0)
+            await Db.UpdateProfileExcelPathAsync(SelectedProfile.Id, value);
+
+        // cohérence en mémoire
+        SelectedProfile.ExcelPath = value;
     }
 
-    public void OnFolderLostFocus()
+    public async Task OnFolderLostFocusAsync()
     {
         if (SelectedProfile is null) return;
         if (FolderPathError != null) return;
 
-        SelectedProfile.FolderPath = string.IsNullOrWhiteSpace(FolderPathText) ? null : FolderPathText.Trim();
+        var value = string.IsNullOrWhiteSpace(FolderPathText) ? null : FolderPathText.Trim();
+
+        if (SelectedProfile.Id > 0)
+            await Db.UpdateProfileFolderPathAsync(SelectedProfile.Id, value);
+
+        SelectedProfile.FolderPath = value;
     }
 
     // Dummy “Enregistrer sous…” : transforme le draft en profil normal
-    public bool SaveAs(string name, out string? error)
+    public async Task<(bool Success, string? Error)> SaveAsAsync(string name)
     {
-        error = null;
+        string? error = null;
         name = (name ?? "").Trim();
 
         if (string.IsNullOrWhiteSpace(name))
         {
             error = "Nom invalide.";
-            return false;
+            return (false, error);
         }
 
         if (string.Equals(name, "DEFAUT", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(name, "CONFIG_NON_SAUVEGARDEE", StringComparison.OrdinalIgnoreCase))
         {
             error = "Nom réservé.";
-            return false;
+            return (false, error);
         }
 
-        if (Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+        // Unicité sur la liste active (hors draft)
+        if (Profiles.Any(p => !p.IsDraft && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
             error = "Ce nom existe déjà.";
-            return false;
+            return (false, error);
         }
 
-        var newId = Profiles.Max(p => p.Id) + 1;
+        var excel = string.IsNullOrWhiteSpace(ExcelPathText) ? null : ExcelPathText.Trim();
+        var folder = string.IsNullOrWhiteSpace(FolderPathText) ? null : FolderPathText.Trim();
 
-        var pNew = new SettingsProfile
-        {
-            Id = newId,
-            Name = name,
-            ExcelPath = string.IsNullOrWhiteSpace(ExcelPathText) ? null : ExcelPathText.Trim(),
-            FolderPath = string.IsNullOrWhiteSpace(FolderPathText) ? null : FolderPathText.Trim(),
-            IsActive = true,
-            IsDraft = false
-        };
+        // Crée le nouveau profil
+        var newId = await Db.InsertProfileAsync(name, excel, folder, isDraft: false);
 
-        // retirer draft si présent
-        var draftInList = Profiles.FirstOrDefault(p => p.IsDraft);
-        if (draftInList != null)
-            Profiles.Remove(draftInList);
+        // Désactive le draft si présent
+        await Db.ClearDraftAsync();
 
-        _draftProfile = null;
+        // Recharge la liste (et restaure la sélection sur le nouveau)
+        await LoadAsync();
 
-        Profiles.Add(pNew);
-        SelectedProfile = pNew;
+        var created = Profiles.FirstOrDefault(p => p.Id == newId);
+        SelectedProfile = created ?? DefaultProfile;
 
-        return true;
+        return (true, null);
     }
+
+    public async Task<(bool Success, string? Error)> AddProfileAsync(string name)
+    {
+        name = (name ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+            return (false, "Nom invalide.");
+
+        if (string.Equals(name, "DEFAUT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name, "CONFIG_NON_SAUVEGARDEE", StringComparison.OrdinalIgnoreCase))
+            return (false, "Nom réservé.");
+
+        // Unicité sur les profils actifs (hors draft)
+        if (Profiles.Any(p => !p.IsDraft && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+            return (false, "Ce nom existe déjà.");
+
+        // Nouveau profil vide (Excel/Folder vides), non draft
+        var newId = await Db.InsertProfileAsync(name, excelPath: null, folderPath: null, isDraft: false);
+
+        // Recharge et sélectionne le nouveau profil
+        await LoadAsync();
+        var created = Profiles.FirstOrDefault(p => p.Id == newId);
+        SelectedProfile = created ?? DefaultProfile;
+
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> DeactivateSelectedAsync()
+    {
+        if (SelectedProfile is null)
+            return (false, "Aucune configuration sélectionnée.");
+
+        // Interdits
+        if (SelectedProfile.Id == 0 || string.Equals(SelectedProfile.Name, "DEFAUT", StringComparison.OrdinalIgnoreCase))
+            return (false, "La configuration DEFAUT ne peut pas être désactivée.");
+
+        // Si c'est le draft, on le “clear” (soft delete aussi)
+        if (SelectedProfile.IsDraft)
+        {
+            await Db.ClearDraftAsync();
+            await LoadAsync();
+            SelectedProfile = DefaultProfile;
+            return (true, null);
+        }
+
+        // Profil normal : soft delete
+        await Db.DeactivateProfileAsync(SelectedProfile.Id);
+
+        await LoadAsync();
+        SelectedProfile = DefaultProfile;
+
+        return (true, null);
+    }
+
 }
